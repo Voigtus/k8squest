@@ -7,13 +7,13 @@ K8sQuest is a **local, game-based Kubernetes training platform** with an interac
 
 No cloud. No AWS. No costs.
 
-## ✨ Features
+## Features
 
-- �📊 **Real-time Monitoring** - Watch Kubernetes resources update live with "check" command
+- 📊 **Real-time Monitoring** - Watch Kubernetes resources update live with "check" command
 - 💡 **Progressive Hints** - Unlocks gradually as you need help
 - 📚 **Step-by-Step Guides** - Beginner-friendly walkthroughs when you need them
-- � **Post-Mission Debriefs** - Learn WHY your fix worked with real-world examples
-- �🎯 **Clear Mission Briefings** - Know difficulty, time estimate, and concepts
+- **Post-Mission Debriefs** - Learn WHY your fix worked with real-world examples
+- 🎯 **Clear Mission Briefings** - Know difficulty, time estimate, and concepts
 - 🏆 **XP & Progress System** - Track your learning journey and achievements
 - 🎮 **Multi-Terminal Workflow** - Learn real-world debugging patterns
 - 💾 **Auto-Save Progress** - Never lose your achievements
@@ -59,7 +59,7 @@ K8sQuest includes **comprehensive safety guards** (enabled by default):
 ## 🎯 Available Commands During Play
 
 - `check` - Monitor resource status in real-time (watch for changes!)
-- `guide` - Show step-by-step solution walkthrough
+- `guide` - Show step-by-step solution walkthrough *(Coming soon - will be updated in future)*
 - `hints` - Display progressive hints (unlocks more on each use)
 - `solution` - View the solution.yaml file
 - `validate` - Test if your solution works
@@ -79,10 +79,17 @@ After completing each mission, you'll get a detailed debrief explaining:
 
 ## 🔧 Reset Levels
 
-Get stuck or want to retry? Reset individual levels:
+Get stuck or want to retry? Reset any level from any world:
 ```bash
-python3 engine/reset.py level-1-pods
-python3 engine/reset.py level-2-deployments
+# First, activate the virtual environment
+source venv/bin/activate
+
+# Reset levels from any world
+python3 engine/reset.py level-1-pods                # World 1
+python3 engine/reset.py level-15-rollout            # World 2
+python3 engine/reset.py level-28-endpoints          # World 3
+python3 engine/reset.py level-38-volume-permissions # World 4
+python3 engine/reset.py level-45-node-affinity      # World 5
 ```
 
 Or reset everything:

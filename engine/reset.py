@@ -1,3 +1,22 @@
+import re
+def validate_level_name(level_name):
+    """Validate level name format to prevent path traversal and invalid input"""
+    if not re.match(r'^[a-zA-Z0-9_-]+$', level_name):
+        raise ValueError(f"Invalid level name: {level_name}")
+
+def run_kubectl_with_timeout(args, timeout=30):
+    """Run kubectl command with a timeout (default 30s)"""
+    try:
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        return result
+    except subprocess.TimeoutExpired:
+        console.print("[red]Error: Command timed out[/red]")
+        return None
 #!/usr/bin/env python3
 """
 K8sQuest Reset Tool - Clean level state
@@ -11,44 +30,46 @@ from rich.prompt import Confirm
 
 console = Console()
 
-def reset_level(world, level):
-    """Reset a specific level to initial state"""
-    base_dir = Path(__file__).parent.parent
-    level_path = base_dir / "worlds" / world / level
-    
-    if not level_path.exists():
-        console.print(f"[red]Error: Level not found: {world}/{level}[/red]")
+def reset_level_any_world(level):
+    """Reset a specific level to initial state, searching all worlds"""
+    try:
+        validate_level_name(level)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
         return False
-    
+    base_dir = Path(__file__).parent.parent
+    worlds_dir = base_dir / "worlds"
+    found = False
+    for world_dir in worlds_dir.iterdir():
+        if not world_dir.is_dir():
+            continue
+        level_path = world_dir / level
+        if level_path.exists():
+            found = True
+            break
+    if not found:
+        console.print(f"[red]Error: Level not found in any world: {level}[/red]")
+        return False
     broken_file = level_path / "broken.yaml"
     if not broken_file.exists():
         console.print(f"[red]Error: No broken.yaml found in {level}[/red]")
         return False
-    
-    console.print(f"[yellow]Resetting {world}/{level}...[/yellow]\n")
-    
+    console.print(f"[yellow]Resetting {world_dir.name}/{level}...[/yellow]\n")
     # Delete namespace (clean slate)
-    console.print("1️⃣  Deleting namespace...")
-    subprocess.run(
-        ["kubectl", "delete", "namespace", "k8squest", "--ignore-not-found"],
-        capture_output=True
-    )
-    
+    console.print("Deleting namespace...")
+    result_del = run_kubectl_with_timeout(["kubectl", "delete", "namespace", "k8squest", "--ignore-not-found"])
+    if result_del is None:
+        return False
     # Recreate namespace
-    console.print("2️⃣  Creating fresh namespace...")
-    subprocess.run(
-        ["kubectl", "create", "namespace", "k8squest"],
-        capture_output=True
-    )
-    
+    console.print(" Creating fresh namespace...")
+    result_create = run_kubectl_with_timeout(["kubectl", "create", "namespace", "k8squest"])
+    if result_create is None:
+        return False
     # Apply broken state
-    console.print("3️⃣  Deploying broken resources...")
-    result = subprocess.run(
-        ["kubectl", "apply", "-n", "k8squest", "-f", str(broken_file)],
-        capture_output=True,
-        text=True
-    )
-    
+    console.print("Deploying broken resources...")
+    result = run_kubectl_with_timeout(["kubectl", "apply", "-n", "k8squest", "-f", str(broken_file)])
+    if result is None:
+        return False
     if result.returncode == 0:
         console.print("\n[green]✅ Level reset successfully![/green]")
         console.print(f"[dim]You can now retry: {level}[/dim]\n")
@@ -96,7 +117,7 @@ def main():
         reset_all()
     else:
         level = sys.argv[1]
-        reset_level("world-1-basics", level)
+        reset_level_any_world(level)
 
 if __name__ == "__main__":
     main()

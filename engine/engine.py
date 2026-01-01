@@ -182,8 +182,14 @@ class K8sQuest:
         ))
         console.print()
     
-    def show_progressive_hints(self, level_path, hint_level=1):
-        """Show hints progressively - unlock more as players struggle"""
+    def show_progressive_hints(self, level_path, hint_level=1, show_all=False):
+        """Show hints progressively - unlock more as players struggle
+        
+        Args:
+            level_path: Path to the level directory
+            hint_level: Current hint level (1-3)
+            show_all: If True, show all unlocked hints. If False, show only the current hint level.
+        """
         hints_available = []
         
         for i in range(1, 4):
@@ -195,21 +201,42 @@ class K8sQuest:
             console.print("[yellow]No hints available for this level[/yellow]")
             return
         
-        # Show hints up to the current level
+        # Show header with progress
         console.print(Panel(
             f"[bold yellow]💡 Hints (Unlocked: {min(hint_level, len(hints_available))}/{len(hints_available)})[/bold yellow]",
             border_style="yellow"
         ))
         
-        for i, hint_file in hints_available:
-            if i <= hint_level:
+        if show_all:
+            # Show all unlocked hints
+            for i, hint_file in hints_available:
+                if i <= hint_level:
+                    with open(hint_file, 'r') as f:
+                        hint_content = f.read().strip()
+                    
+                    hint_style = "cyan" if i == 1 else ("yellow" if i == 2 else "green")
+                    console.print(f"\n[bold {hint_style}]Hint {i}:[/bold {hint_style}] {hint_content}")
+                else:
+                    console.print(f"\n[dim]Hint {i}: 🔒 Locked - try again to unlock[/dim]")
+        else:
+            # Show only the current hint level (newest unlocked hint)
+            if hint_level <= len(hints_available):
+                i, hint_file = hints_available[hint_level - 1]
                 with open(hint_file, 'r') as f:
                     hint_content = f.read().strip()
                 
-                hint_style = "cyan" if i == 1 else ("yellow" if i == 2 else "green")
-                console.print(f"\n[bold {hint_style}]Hint {i}:[/bold {hint_style}] {hint_content}")
+                hint_style = "cyan" if hint_level == 1 else ("yellow" if hint_level == 2 else "green")
+                console.print(f"\n[bold {hint_style}]Hint {hint_level}:[/bold {hint_style}] {hint_content}")
+                
+                # Show status of other hints
+                for j in range(1, len(hints_available) + 1):
+                    if j < hint_level:
+                        console.print(f"\n[dim]Hint {j}: ✅ Previously unlocked (type 'hints' to see all)[/dim]")
+                    elif j > hint_level:
+                        console.print(f"\n[dim]Hint {j}: 🔒 Locked - try again to unlock[/dim]")
             else:
-                console.print(f"\n[dim]Hint {i}: 🔒 Locked - try again to unlock[/dim]")
+                console.print("\n[yellow]All hints have been unlocked![/yellow]")
+                console.print("[dim]Type 'hints' again to see all hints[/dim]")
         
         console.print()
         return min(hint_level, len(hints_available))
@@ -225,7 +252,10 @@ class K8sQuest:
         with open(debrief_file, 'r') as f:
             debrief_content = f.read()
         
+        # Clear screen and move cursor to top
         console.clear()
+        console.print("\033[H", end="")  # ANSI escape code to move cursor to home position
+        
         console.print(Panel(
             Markdown(debrief_content),
             title="[bold green]🎓 Mission Debrief - What You Learned[/bold green]",
@@ -292,30 +322,60 @@ class K8sQuest:
                 console.print("[dim]💡 Tip: You can use this as a reference to fix the issue[/dim]\n")
     
     def get_resource_status(self, level_name):
-        """Get current status of the Kubernetes resource"""
+        """Get current status of Kubernetes resources in k8squest namespace"""
         try:
-            if "pod" in level_name:
+            # Get common resource types
+            resource_types = ["pods", "deployments", "services", "ingress", "pvc", "configmaps"]
+            status_parts = []
+            
+            for resource_type in resource_types:
                 result = subprocess.run(
-                    ["kubectl", "get", "pod", "nginx-broken", "-n", "k8squest", 
-                     "-o", "jsonpath={.status.phase}"],
+                    ["kubectl", "get", resource_type, "-n", "k8squest", "--no-headers"],
                     capture_output=True,
                     text=True,
-                    timeout=5
+                    timeout=3
                 )
-                return result.stdout.strip() or "Unknown"
-            elif "deployment" in level_name:
-                result = subprocess.run(
-                    ["kubectl", "get", "deployment", "web", "-n", "k8squest",
-                     "-o", "jsonpath={.status.readyReplicas}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                ready = result.stdout.strip() or "0"
-                return f"{ready} replicas ready"
-        except:
-            return "Unknown"
-        return "Unknown"
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    lines = result.stdout.strip().split('\n')
+                    
+                    for line in lines[:2]:  # Show up to 2 of each type
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            name = parts[0]
+                            status = parts[1] if len(parts) > 1 else "?"
+                            
+                            # Format based on resource type
+                            if resource_type == "pods":
+                                status_parts.append(f"Pod {name}: {status}")
+                            elif resource_type == "deployments":
+                                status_parts.append(f"Deploy {name}: {status}")
+                            elif resource_type == "services":
+                                svc_type = parts[1] if len(parts) > 1 else "?"
+                                status_parts.append(f"Svc {name}: {svc_type}")
+                            elif resource_type == "ingress":
+                                hosts = parts[2] if len(parts) > 2 else "?"
+                                status_parts.append(f"Ingress {name}: {hosts}")
+                            elif resource_type == "pvc":
+                                status_parts.append(f"PVC {name}: {status}")
+                            elif resource_type == "configmaps":
+                                status_parts.append(f"CM {name}")
+                    
+                    # Limit total status parts to avoid clutter
+                    if len(status_parts) >= 3:
+                        break
+            
+            if status_parts:
+                return " | ".join(status_parts[:3])
+            else:
+                return "No resources found"
+                
+        except subprocess.TimeoutExpired:
+            return "Timeout"
+        except Exception as e:
+            return f"Checking..."
+        
+        return "Checking..."
     
     def show_terminal_instructions(self, level_name):
         """Show clear instructions about opening another terminal"""
@@ -454,15 +514,28 @@ Look for "2/2" ready replicas!
             progress.update(task, description="Deploying broken resources...")
             progress.advance(task)
             
-            # Apply broken config (without forcing namespace to respect YAML)
-            result = subprocess.run(
-                ["kubectl", "apply", "-f", str(level_path / "broken.yaml")],
-                capture_output=True,
-                text=True
-            )
-            # Log errors for debugging (optional)
-            if result.returncode != 0:
-                console.print(f"[dim red]Warning: {result.stderr}[/dim red]")
+            # Check if level has a setup script (for levels needing history like rollback)
+            setup_script = level_path / "setup.sh"
+            if setup_script.exists():
+                console.print("[yellow]Running level setup script...[/yellow]")
+                result = subprocess.run(
+                    ["bash", str(setup_script)],
+                    cwd=str(level_path),
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    console.print(f"[dim red]Setup warning: {result.stderr}[/dim red]")
+            else:
+                # Apply broken config (without forcing namespace to respect YAML)
+                result = subprocess.run(
+                    ["kubectl", "apply", "-f", str(level_path / "broken.yaml")],
+                    capture_output=True,
+                    text=True
+                )
+                # Log errors for debugging (optional)
+                if result.returncode != 0:
+                    console.print(f"[dim red]Warning: {result.stderr}[/dim red]")
             
             progress.update(task, description="✅ Environment ready!")
             progress.advance(task)
@@ -558,10 +631,8 @@ Look for "2/2" ready replicas!
         # Show terminal instructions prominently
         self.show_terminal_instructions(level_name)
         
-        # Start with hint level 1
-        current_hint_level = 1
-        console.print()
-        self.show_progressive_hints(level_path, current_hint_level)
+        # Start with hint level 0 (no hints shown yet)
+        current_hint_level = 0
         
         # Interactive loop with retro UI
         attempts = 0
@@ -607,7 +678,8 @@ Look for "2/2" ready replicas!
                 if RETRO_UI_ENABLED:
                     show_power_up_notification("hint")
                 console.print()
-                self.show_progressive_hints(level_path, current_hint_level)
+                # Show only the newly unlocked hint (not all previous hints)
+                self.show_progressive_hints(level_path, current_hint_level, show_all=False)
             
             elif action == "solution":
                 console.print("\n[yellow]📄 Showing solution file...[/yellow]\n")
@@ -685,6 +757,124 @@ Look for "2/2" ready replicas!
             elif action == "quit":
                 console.print("\n[yellow]👋 Thanks for playing K8sQuest! Progress saved.[/yellow]\n")
                 sys.exit(0)
+    
+    def play_specific_level(self):
+        """Allow user to select and play a specific level"""
+        import re
+        
+        # Get all worlds and their levels
+        worlds = {}
+        all_worlds = [
+            "world-1-basics",
+            "world-2-deployments",
+            "world-3-networking",
+            "world-4-storage",
+            "world-5-security"
+        ]
+        
+        def natural_sort_key(path):
+            """Extract numbers from path for natural sorting"""
+            parts = re.split(r'(\d+)', path.name)
+            return [int(part) if part.isdigit() else part for part in parts]
+        
+        # Collect all levels from all worlds
+        for world_name in all_worlds:
+            world_path = self.base_dir / "worlds" / world_name
+            if world_path.exists():
+                levels = sorted([d for d in world_path.iterdir() if d.is_dir()], key=natural_sort_key)
+                worlds[world_name] = levels
+        
+        # Display all levels organized by world
+        console.clear()
+        console.print(Panel(
+            "[bold cyan]Select a Level to Play[/bold cyan]",
+            border_style="cyan"
+        ))
+        console.print()
+        
+        level_choices = []
+        display_list = []
+        
+        for world_name in all_worlds:
+            if world_name not in worlds:
+                continue
+                
+            world_display = world_name.replace("world-", "World ").replace("-", " ").title()
+            console.print(f"\n[bold yellow]{world_display}[/bold yellow]")
+            
+            for level_path in worlds[world_name]:
+                level_name = level_path.name
+                # Check if completed
+                status = "✅" if level_name in self.progress["completed_levels"] else "⭕"
+                
+                # Load mission to get the name
+                mission_file = level_path / "mission.yaml"
+                if mission_file.exists():
+                    with open(mission_file, 'r') as f:
+                        mission = yaml.safe_load(f)
+                        display_name = mission.get('name', level_name)
+                else:
+                    display_name = level_name
+                
+                level_num = len(level_choices) + 1
+                level_choices.append((level_name, world_name, level_path))
+                display_list.append(f"  [{level_num:2d}] {status} {display_name}")
+                console.print(display_list[-1])
+        
+        console.print("\n[dim]Enter level number or 'q' to quit[/dim]\n")
+        
+        # Get user selection
+        choice = Prompt.ask("Choose a level", default="q")
+        
+        if choice.lower() == 'q':
+            console.print("\n[yellow]Returning to menu...[/yellow]\n")
+            return
+        
+        try:
+            level_index = int(choice) - 1
+            if 0 <= level_index < len(level_choices):
+                level_name, world_name, level_path = level_choices[level_index]
+                
+                # Update progress to this level
+                self.progress["current_level"] = level_name
+                self.progress["current_world"] = world_name
+                self.save_progress()
+                
+                # Play the level
+                self.play_level(level_path, level_name)
+                
+                # After playing, ask what to do next
+                console.print("\n[cyan]What would you like to do?[/cyan]")
+                console.print("  [1] Play another level")
+                console.print("  [2] Continue from here")
+                console.print("  [q] Quit")
+                console.print()
+                
+                next_choice = Prompt.ask("Your choice", choices=["1", "2", "q"], default="q")
+                
+                if next_choice == "1":
+                    self.play_specific_level()  # Recursive call to play another
+                elif next_choice == "2":
+                    # Continue from this world
+                    all_worlds_list = [
+                        "world-1-basics",
+                        "world-2-deployments",
+                        "world-3-networking",
+                        "world-4-storage",
+                        "world-5-security"
+                    ]
+                    start_world_index = all_worlds_list.index(world_name)
+                    for world in all_worlds_list[start_world_index:]:
+                        if not self.play_world(world):
+                            break
+            else:
+                console.print("[red]Invalid level number[/red]")
+                time.sleep(1)
+                self.play_specific_level()
+        except ValueError:
+            console.print("[red]Please enter a valid number[/red]")
+            time.sleep(1)
+            self.play_specific_level()
     
     def play_world(self, world_name):
         """Play all levels in a world"""
@@ -780,7 +970,17 @@ def main():
         ))
         console.print()
         
-        if Confirm.ask("Continue from where you left off?", default=True):
+        # Offer three options
+        console.print("[cyan]Choose an option:[/cyan]")
+        console.print("  [1] Continue from where you left off")
+        console.print("  [2] Play a specific level")
+        console.print("  [3] Start from the beginning")
+        console.print("  [q] Quit")
+        console.print()
+        
+        choice = Prompt.ask("Your choice", choices=["1", "2", "3", "q"], default="1")
+        
+        if choice == "1":
             # Find which world to start from
             start_world_index = 0
             for i, world in enumerate(all_worlds):
@@ -793,7 +993,11 @@ def main():
                 if not game.play_world(world):
                     break  # Player quit
                     
-        elif Confirm.ask("Start from the beginning instead?", default=False):
+        elif choice == "2":
+            # Play specific level
+            game.play_specific_level()
+            
+        elif choice == "3":
             game.progress["current_level"] = None
             game.progress["completed_levels"] = []
             game.progress["total_xp"] = 0

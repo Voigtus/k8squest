@@ -4,7 +4,7 @@ metadata:
   name: web-app
   namespace: k8squest
   annotations:
-    kubernetes.io/change-cause: "Update to v2.0 (broken image)"
+    kubernetes.io/change-cause: "Initial deployment v1.0 (working)"
 spec:
   replicas: 2
   strategy:
@@ -19,11 +19,11 @@ spec:
     metadata:
       labels:
         app: web
-        version: v2
+        version: v1
     spec:
       containers:
       - name: web
-        image: nginx:nonexistent-v2.0-xyz  # ❌ This image doesn't exist!
+        image: nginx:alpine
         ports:
         - containerPort: 80
         resources:
@@ -33,4 +33,3 @@ spec:
           limits:
             cpu: "50m"
             memory: "64Mi"
-
