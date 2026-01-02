@@ -40,10 +40,10 @@ spec:
     image: postgres:13
     command: ["sh", "-c"]
     args:
-    # ✅ FIXED! Using correct service DNS name
+    # ✅ FIXED! Using correct service DNS name  
     - |
       while true; do
         echo "Attempting connection..."
-        pg_isready -h database-service -p 5432 && echo "Connection successful!"
+        pg_isready -h database-service -p 5432 || echo "Connection failed"
         sleep 10
       done
