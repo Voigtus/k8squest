@@ -384,9 +384,10 @@ class K8sQuest:
                 "[bold yellow]📟 OPEN A NEW TERMINAL WINDOW[/bold yellow]\n\n"
                 "[cyan]While this game is running:[/cyan]\n"
                 "1️⃣  Open a NEW terminal window/tab\n"
-                "2️⃣  Navigate to this directory\n"
-                f"3️⃣  Use kubectl commands to fix the issue\n"
-                "4️⃣  Come back here and choose 'validate' or 'check'\n\n"
+                "2️⃣  Use kubectl commands to fix the issue:\n"
+                "    • [dim]kubectl edit, scale, patch, etc.[/dim]\n"
+                "    • [dim]Or apply solution.yaml from level folder[/dim]\n"
+                "3️⃣  Come back here and choose 'validate' or 'check'\n\n"
                 "[dim]💡 Tip: Use Cmd+T (Mac) or Ctrl+Shift+T (Linux) to open a new tab[/dim]"
             ),
             title="[bold red]⚠️  IMPORTANT[/bold red]",
