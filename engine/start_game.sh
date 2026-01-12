@@ -17,7 +17,7 @@ for LEVEL in "$WORLD_DIR"/*; do
   echo "Press ENTER when ready to validate"
   read
 
-  bash "$LEVEL/validate.sh"
+  sh "$LEVEL/validate.sh"
 
 done
 

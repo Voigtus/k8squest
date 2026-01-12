@@ -5,12 +5,9 @@ Displays completion status of all 50 levels
 """
 
 import json
-import os
 from pathlib import Path
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.progress import Progress, BarColumn, TextColumn
 
 console = Console()
 
@@ -51,7 +48,7 @@ def load_progress():
     """Load progress from progress.json"""
     progress_file = Path("progress.json")
     if progress_file.exists():
-        with open(progress_file) as f:
+        with open(progress_file, encoding='utf-8') as f:
             return json.load(f)
     return {"completed": [], "total_xp": 0}
 
@@ -60,7 +57,7 @@ def count_available_levels(world_dir):
     world_path = Path("worlds") / world_dir
     if not world_path.exists():
         return 0
-    
+
     # Count directories with mission.yaml
     count = 0
     for item in world_path.iterdir():
@@ -70,11 +67,11 @@ def count_available_levels(world_dir):
 
 def main():
     console.clear()
-    
+
     progress = load_progress()
     completed_levels = progress.get("completed", [])
     total_xp = progress.get("total_xp", 0)
-    
+
     # Header
     console.print(Panel.fit(
         "[bold cyan]🎮 K8sQuest - Progress Tracker[/bold cyan]\n"
@@ -82,21 +79,21 @@ def main():
         f"[yellow]Levels Completed:[/yellow] {len(completed_levels)} / 50",
         border_style="cyan"
     ))
-    
+
     console.print()
-    
+
     # World-by-world breakdown
     for world_dir, world_info in WORLDS.items():
         # Count available and completed levels
         available_count = count_available_levels(world_dir)
         total_levels = len(world_info["levels"])
-        
+
         # Count completed levels in this world
         completed_in_world = sum(
-            1 for level in completed_levels 
+            1 for level in completed_levels
             if level.startswith(world_dir)
         )
-        
+
         # Status icon
         if available_count == 0:
             status = "⏳"
@@ -110,16 +107,16 @@ def main():
             status = "🚧"
             status_text = "In Progress"
             color = "cyan"
-        
+
         # World header
         console.print(f"\n{status} [{color}]{world_info['name']}[/{color}]")
         console.print(f"   Difficulty: {world_info['difficulty']} | XP: {world_info['total_xp']:,}")
-        
+
         # Progress bar
         if available_count > 0:
             progress_pct = (completed_in_world / available_count) * 100
             console.print(f"   Available: {available_count}/{total_levels} levels | Completed: {completed_in_world}/{available_count}")
-            
+
             # Visual progress bar
             bar_length = 40
             filled = int((completed_in_world / available_count) * bar_length)
@@ -127,20 +124,20 @@ def main():
             console.print(f"   [{color}]{bar}[/{color}] {progress_pct:.0f}%")
         else:
             console.print(f"   Status: {status_text}")
-    
+
     console.print()
-    
+
     # Overall progress
     total_available = sum(count_available_levels(w) for w in WORLDS.keys())
     overall_pct = (len(completed_levels) / total_available) * 100 if total_available > 0 else 0
-    
+
     console.print(Panel.fit(
         f"[bold]Overall Progress:[/bold] {len(completed_levels)}/{total_available} levels ({overall_pct:.1f}%)\n"
         f"[bold]Implementation Status:[/bold] {total_available}/50 levels created ({(total_available/50)*100:.0f}%)",
         title="Summary",
         border_style="green"
     ))
-    
+
     # Next steps
     if total_available < 50:
         console.print("\n[yellow]📝 Next Steps:[/yellow]")

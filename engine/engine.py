@@ -4,34 +4,39 @@ K8sQuest - Interactive Kubernetes Learning Game
 🎮 Now with Retro Gaming UI! 🎮
 """
 
-import os
-import sys
 import json
-import yaml
+import os
 import subprocess
+import sys
 import time
-from pathlib import Path
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
-from rich.layout import Layout
-from rich.text import Text
-from rich.markdown import Markdown
-from rich.live import Live
-from rich.align import Align
-from rich import box
 from datetime import datetime
+from pathlib import Path
+
+import yaml
+from rich import box
+from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
+from rich.text import Text
 
 # Import retro UI components
 try:
     from retro_ui import (
-        show_retro_welcome, show_level_start, show_victory,
-        show_command_menu, show_power_up_notification,
-        show_retro_header, show_xp_bar, show_world_entry,
-        show_game_complete, celebrate_milestone
+        celebrate_milestone,
+        show_command_menu,
+        show_game_complete,
+        show_level_start,
+        show_power_up_notification,
+        show_retro_header,
+        show_retro_welcome,
+        show_victory,
+        show_xp_bar,
     )
+
     RETRO_UI_ENABLED = True
 except ImportError:
     RETRO_UI_ENABLED = False
@@ -41,13 +46,17 @@ except ImportError:
 try:
     from player_name import get_player_name
 except ImportError:
+
     def get_player_name(console, current_name=None):
         from rich.prompt import Prompt
+
         return Prompt.ask("Enter your name", default="K8s Explorer")
+
 
 # Import safety guards
 try:
-    from safety import validate_kubectl_command, print_safety_info
+    from safety import print_safety_info, validate_kubectl_command
+
     SAFETY_ENABLED = os.environ.get("K8SQUEST_SAFETY", "on").lower() != "off"
 except ImportError:
     SAFETY_ENABLED = False
@@ -55,16 +64,17 @@ except ImportError:
 
 console = Console()
 
+
 class K8sQuest:
     def __init__(self):
         self.base_dir = Path(__file__).parent.parent
         self.progress_file = self.base_dir / "progress.json"
         self.progress = self.load_progress()
-        
+
     def load_progress(self):
         """Load player progress from JSON file"""
         if self.progress_file.exists():
-            with open(self.progress_file, 'r') as f:
+            with open(self.progress_file, "r", encoding='utf-8', errors='replace') as f:
                 progress = json.load(f)
                 # Ensure current_level exists for resume functionality
                 if "current_level" not in progress:
@@ -75,216 +85,251 @@ class K8sQuest:
             "completed_levels": [],
             "current_world": "world-1-basics",
             "current_level": None,
-            "player_name": "Padawan"
+            "player_name": "Padawan",
         }
-    
+
     def save_progress(self):
         """Save player progress"""
-        with open(self.progress_file, 'w') as f:
+        with open(self.progress_file, "w") as f:
             json.dump(self.progress, indent=2, fp=f)
-    
+
     def show_welcome(self):
         """Display welcome screen with retro gaming style"""
         if RETRO_UI_ENABLED:
             show_retro_welcome()
             time.sleep(1)
-        
+
         console.clear()
-        
+
         # Retro-style title
         title = """
     ╦╔═╔═╗╔═╗ ╦ ╦╔═╗╔═╗╔╦╗
-    ╠╩╗╚═╗║═╬╗║ ║║╣ ╚═╗ ║ 
-    ╩ ╩╚═╝╚═╝╚╚═╝╚═╝╚═╝ ╩ 
+    ╠╩╗╚═╗║═╬╗║ ║║╣ ╚═╗ ║
+    ╩ ╩╚═╝╚═╝╚╚═╝╚═╝╚═╝ ╩
         """
-        
+
         welcome_panel = Panel(
-            Text(title, style="bold cyan") + 
-            Text("\n🎮 Kubernetes Adventure Game 🎮\n", style="bold yellow") +
-            Text("Contra-Style Learning | Arcade Action | Boss Battles", style="dim"),
+            Text(title, style="bold cyan")
+            + Text("\n🎮 Kubernetes Adventure Game 🎮\n", style="bold yellow")
+            + Text("Contra-Style Learning | Arcade Action | Boss Battles", style="dim"),
             title="[bold magenta]⚔️  K8SQUEST  ⚔️[/bold magenta]",
             border_style="cyan",
-            box=box.HEAVY
+            box=box.HEAVY,
         )
-        
+
         console.print(welcome_panel)
         console.print()
-        
+
         # Player stats in retro gaming style
         stats = Table(show_header=False, box=box.HEAVY, border_style="yellow")
         stats.add_column("Stat", style="cyan bold")
         stats.add_column("Value", style="yellow bold")
         stats.add_row("🎮 PLAYER", self.progress["player_name"])
         stats.add_row("💎 TOTAL XP", str(self.progress["total_xp"]))
-        stats.add_row("⭐ LEVELS CLEARED", f"{len(self.progress['completed_levels'])}/50")
-        
+        stats.add_row(
+            "⭐ LEVELS CLEARED", f"{len(self.progress['completed_levels'])}/50"
+        )
+
         # Calculate completion percentage
-        completion = (len(self.progress['completed_levels']) / 50) * 100
+        completion = (len(self.progress["completed_levels"]) / 50) * 100
         progress_bar = "█" * int(completion / 5) + "░" * (20 - int(completion / 5))
         stats.add_row("📊 PROGRESS", f"[{progress_bar}] {completion:.0f}%")
-        
+
         # Show current level if resuming
         if self.progress.get("current_level"):
             stats.add_row("🎯 CURRENT MISSION", self.progress["current_level"])
-        
+
         # Add safety status with gaming flair
         safety_status = "🛡️  ACTIVE" if SAFETY_ENABLED else "⚠️  DISABLED"
         safety_color = "green" if SAFETY_ENABLED else "red"
         stats.add_row("🛡️  SHIELDS", f"[{safety_color}]{safety_status}[/{safety_color}]")
-        
-        console.print(Panel(stats, title="[bold yellow]⚡ PLAYER STATUS ⚡[/bold yellow]", border_style="yellow", box=box.HEAVY))
-        
+
+        console.print(
+            Panel(
+                stats,
+                title="[bold yellow]⚡ PLAYER STATUS ⚡[/bold yellow]",
+                border_style="yellow",
+                box=box.HEAVY,
+            )
+        )
+
         # Show XP progress bar
         if RETRO_UI_ENABLED:
             console.print()
             console.print(show_xp_bar(self.progress["total_xp"], 10200))
-        
+
         # Show safety reminder if enabled with gaming theme
         if SAFETY_ENABLED:
             console.print()
-            console.print(Panel(
-                "[green]🛡️  DEFENSE SYSTEMS ONLINE[/green]\n"
-                "[dim]✓ Prevents cluster destruction\n"
-                "✓ Namespace protection active\n"
-                "✓ Safe mode engaged\n"
-                "Type 'safety info' for shield details[/dim]",
-                border_style="green",
-                box=box.HEAVY,
-                title="[bold green]🔰 SAFETY PROTOCOLS[/bold green]"
-            ))
+            console.print(
+                Panel(
+                    "[green]🛡️  DEFENSE SYSTEMS ONLINE[/green]\n"
+                    "[dim]✓ Prevents cluster destruction\n"
+                    "✓ Namespace protection active\n"
+                    "✓ Safe mode engaged\n"
+                    "Type 'safety info' for shield details[/dim]",
+                    border_style="green",
+                    box=box.HEAVY,
+                    title="[bold green]🔰 SAFETY PROTOCOLS[/bold green]",
+                )
+            )
         console.print()
-    
+
     def load_mission(self, level_path):
         """Load mission metadata"""
         mission_file = level_path / "mission.yaml"
-        with open(mission_file, 'r') as f:
+        with open(mission_file, "r", encoding='utf-8', errors='replace') as f:
             return yaml.safe_load(f)
-    
+
     def show_mission_briefing(self, mission, level_name):
         """Display mission briefing screen"""
         console.clear()
-        
+
         briefing = f"""
-# 🎯 {mission['name']}
+# 🎯 {mission["name"]}
 
-**Mission**: {mission['description']}
+**Mission**: {mission["description"]}
 
-**Objective**: {mission['objective']}
+**Objective**: {mission["objective"]}
 
-**XP Reward**: {mission['xp']} XP
+**XP Reward**: {mission["xp"]} XP
         """
-        
-        console.print(Panel(
-            Markdown(briefing),
-            title=f"[bold cyan]Level: {level_name}[/bold cyan]",
-            border_style="yellow",
-            box=box.DOUBLE
-        ))
+
+        console.print(
+            Panel(
+                Markdown(briefing),
+                title=f"[bold cyan]Level: {level_name}[/bold cyan]",
+                border_style="yellow",
+                box=box.DOUBLE,
+            )
+        )
         console.print()
-    
+
     def show_progressive_hints(self, level_path, hint_level=1, show_all=False):
         """Show hints progressively - unlock more as players struggle
-        
+
         Args:
             level_path: Path to the level directory
             hint_level: Current hint level (1-3)
             show_all: If True, show all unlocked hints. If False, show only the current hint level.
         """
         hints_available = []
-        
+
         for i in range(1, 4):
             hint_file = level_path / f"hint-{i}.txt"
             if hint_file.exists():
                 hints_available.append((i, hint_file))
-        
+
         if not hints_available:
             console.print("[yellow]No hints available for this level[/yellow]")
             return
-        
+
         # Show header with progress
-        console.print(Panel(
-            f"[bold yellow]💡 Hints (Unlocked: {min(hint_level, len(hints_available))}/{len(hints_available)})[/bold yellow]",
-            border_style="yellow"
-        ))
-        
+        console.print(
+            Panel(
+                f"[bold yellow]💡 Hints (Unlocked: {min(hint_level, len(hints_available))}/{len(hints_available)})[/bold yellow]",
+                border_style="yellow",
+            )
+        )
+
         if show_all:
             # Show all unlocked hints
             for i, hint_file in hints_available:
                 if i <= hint_level:
-                    with open(hint_file, 'r') as f:
+                    with open(hint_file, "r", encoding='utf-8', errors='replace') as f:
                         hint_content = f.read().strip()
-                    
+
                     hint_style = "cyan" if i == 1 else ("yellow" if i == 2 else "green")
-                    console.print(f"\n[bold {hint_style}]Hint {i}:[/bold {hint_style}] {hint_content}")
+                    console.print(
+                        f"\n[bold {hint_style}]Hint {i}:[/bold {hint_style}] {hint_content}"
+                    )
                 else:
-                    console.print(f"\n[dim]Hint {i}: 🔒 Locked - try again to unlock[/dim]")
+                    console.print(
+                        f"\n[dim]Hint {i}: 🔒 Locked - try again to unlock[/dim]"
+                    )
         else:
             # Show only the current hint level (newest unlocked hint)
             if hint_level <= len(hints_available):
                 i, hint_file = hints_available[hint_level - 1]
-                with open(hint_file, 'r') as f:
+                with open(hint_file, "r", encoding='utf-8', errors='replace') as f:
                     hint_content = f.read().strip()
-                
-                hint_style = "cyan" if hint_level == 1 else ("yellow" if hint_level == 2 else "green")
-                console.print(f"\n[bold {hint_style}]Hint {hint_level}:[/bold {hint_style}] {hint_content}")
-                
+
+                hint_style = (
+                    "cyan"
+                    if hint_level == 1
+                    else ("yellow" if hint_level == 2 else "green")
+                )
+                console.print(
+                    f"\n[bold {hint_style}]Hint {hint_level}:[/bold {hint_style}] {hint_content}"
+                )
+
                 # Show status of other hints
                 for j in range(1, len(hints_available) + 1):
                     if j < hint_level:
-                        console.print(f"\n[dim]Hint {j}: ✅ Previously unlocked (type 'hints' to see all)[/dim]")
+                        console.print(
+                            f"\n[dim]Hint {j}: ✅ Previously unlocked (type 'hints' to see all)[/dim]"
+                        )
                     elif j > hint_level:
-                        console.print(f"\n[dim]Hint {j}: 🔒 Locked - try again to unlock[/dim]")
+                        console.print(
+                            f"\n[dim]Hint {j}: 🔒 Locked - try again to unlock[/dim]"
+                        )
             else:
                 console.print("\n[yellow]All hints have been unlocked![/yellow]")
                 console.print("[dim]Type 'hints' again to see all hints[/dim]")
-        
+
         console.print()
         return min(hint_level, len(hints_available))
-    
+
     def show_debrief(self, level_path):
         """Show the post-mission debrief with learning explanations"""
         debrief_file = level_path / "debrief.md"
-        
+
         if not debrief_file.exists():
             console.print("[yellow]No debrief available for this level[/yellow]")
             return
-        
-        with open(debrief_file, 'r') as f:
+
+        with open(debrief_file, "r", encoding='utf-8', errors='replace') as f:
             debrief_content = f.read()
-        
+
         # Clear screen and move cursor to top
         console.clear()
-        console.print("\033[H", end="")  # ANSI escape code to move cursor to home position
-        
-        console.print(Panel(
-            Markdown(debrief_content),
-            title="[bold green]🎓 Mission Debrief - What You Learned[/bold green]",
-            border_style="green",
-            box=box.DOUBLE
-        ))
+        console.print(
+            "\033[H", end=""
+        )  # ANSI escape code to move cursor to home position
+
+        console.print(
+            Panel(
+                Markdown(debrief_content),
+                title="[bold green]🎓 Mission Debrief - What You Learned[/bold green]",
+                border_style="green",
+                box=box.DOUBLE,
+            )
+        )
         console.print()
-        
+
         Prompt.ask("\n[dim]Press ENTER to continue[/dim]", default="")
-    
+
     def show_solution_file(self, level_path):
         """Display the solution.yaml file contents"""
         solution_file = level_path / "solution.yaml"
-        
+
         if not solution_file.exists():
             console.print("[yellow]No solution file available for this level[/yellow]")
             return
-        
-        with open(solution_file, 'r') as f:
+
+        with open(solution_file, "r", encoding='utf-8', errors='replace') as f:
             solution_content = f.read()
-        
-        console.print(Panel(
-            f"[cyan]{solution_content}[/cyan]",
-            title="[bold green]📄 solution.yaml[/bold green]",
-            border_style="green",
-            box=box.ROUNDED
-        ))
+
+        console.print(
+            Panel(
+                f"[cyan]{solution_content}[/cyan]",
+                title="[bold green]📄 solution.yaml[/bold green]",
+                border_style="green",
+                box=box.ROUNDED,
+            )
+        )
         console.print()
-    
+
     def show_hints(self, level_name, level_path=None):
         """Show helpful hints based on the level - DEPRECATED, use show_progressive_hints"""
         hints = {
@@ -293,58 +338,72 @@ class K8sQuest:
                 "Use `kubectl describe pod nginx-broken -n k8squest` to see events",
                 "Use `kubectl logs nginx-broken -n k8squest` to check logs",
                 "The pod has a bad command. Check what command is being run.",
-                "Remember: You can't edit a running pod - delete and recreate it!"
+                "Remember: You can't edit a running pod - delete and recreate it!",
             ],
             "level-2-deployments": [
                 "Use `kubectl get deployment web -n k8squest` to check status",
                 "Use `kubectl describe deployment web -n k8squest` for details",
                 "Scale with `kubectl scale deployment web --replicas=N -n k8squest`",
-                "Or edit with `kubectl edit deployment web -n k8squest`"
-            ]
+                "Or edit with `kubectl edit deployment web -n k8squest`",
+            ],
         }
-        
+
         level_hints = hints.get(level_name, ["Explore with kubectl commands!"])
-        
-        hint_table = Table(title="💡 Helpful Commands", box=box.ROUNDED, border_style="blue")
+
+        hint_table = Table(
+            title="💡 Helpful Commands", box=box.ROUNDED, border_style="blue"
+        )
         hint_table.add_column("Hint", style="cyan")
-        
+
         for hint in level_hints:
             hint_table.add_row(hint)
-        
+
         console.print(hint_table)
         console.print()
-        
+
         # Ask if they want to see the solution
         if level_path:
-            if Confirm.ask("[yellow]📄 Would you like to see the solution.yaml file?[/yellow]", default=False):
+            if Confirm.ask(
+                "[yellow]📄 Would you like to see the solution.yaml file?[/yellow]",
+                default=False,
+            ):
                 console.print()
                 self.show_solution_file(level_path)
-                console.print("[dim]💡 Tip: You can use this as a reference to fix the issue[/dim]\n")
-    
+                console.print(
+                    "[dim]💡 Tip: You can use this as a reference to fix the issue[/dim]\n"
+                )
+
     def get_resource_status(self, level_name):
         """Get current status of Kubernetes resources in k8squest namespace"""
         try:
             # Get common resource types
-            resource_types = ["pods", "deployments", "services", "ingress", "pvc", "configmaps"]
+            resource_types = [
+                "pods",
+                "deployments",
+                "services",
+                "ingress",
+                "pvc",
+                "configmaps",
+            ]
             status_parts = []
-            
+
             for resource_type in resource_types:
                 result = subprocess.run(
                     ["kubectl", "get", resource_type, "-n", "k8squest", "--no-headers"],
                     capture_output=True,
                     text=True,
-                    timeout=3
+                    timeout=3,
                 )
-                
+
                 if result.returncode == 0 and result.stdout.strip():
-                    lines = result.stdout.strip().split('\n')
-                    
+                    lines = result.stdout.strip().split("\n")
+
                     for line in lines[:2]:  # Show up to 2 of each type
                         parts = line.split()
                         if len(parts) >= 2:
                             name = parts[0]
                             status = parts[1] if len(parts) > 1 else "?"
-                            
+
                             # Format based on resource type
                             if resource_type == "pods":
                                 status_parts.append(f"Pod {name}: {status}")
@@ -360,23 +419,23 @@ class K8sQuest:
                                 status_parts.append(f"PVC {name}: {status}")
                             elif resource_type == "configmaps":
                                 status_parts.append(f"CM {name}")
-                    
+
                     # Limit total status parts to avoid clutter
                     if len(status_parts) >= 3:
                         break
-            
+
             if status_parts:
                 return " | ".join(status_parts[:3])
             else:
                 return "No resources found"
-                
+
         except subprocess.TimeoutExpired:
             return "Timeout"
         except Exception as e:
             return f"Checking..."
-        
+
         return "Checking..."
-    
+
     def show_terminal_instructions(self, level_name):
         """Show clear instructions about opening another terminal"""
         instructions = Panel(
@@ -392,30 +451,29 @@ class K8sQuest:
             ),
             title="[bold red]⚠️  IMPORTANT[/bold red]",
             border_style="red",
-            box=box.DOUBLE
+            box=box.DOUBLE,
         )
         console.print(instructions)
         console.print()
-    
+
     def monitor_status(self, level_name, duration=10):
         """Monitor resource status in real-time"""
-        console.print(f"\n[yellow]👀 Monitoring status for {duration} seconds...[/yellow]\n")
-        
+        console.print(
+            f"\n[yellow]👀 Monitoring status for {duration} seconds...[/yellow]\n"
+        )
+
         status_table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan")
         status_table.add_column("Time", style="dim")
         status_table.add_column("Status", style="yellow")
-        
+
         with Live(status_table, refresh_per_second=2, console=console) as live:
             for i in range(duration):
                 status = self.get_resource_status(level_name)
-                status_table.add_row(
-                    datetime.now().strftime("%H:%M:%S"),
-                    status
-                )
+                status_table.add_row(datetime.now().strftime("%H:%M:%S"), status)
                 time.sleep(1)
-        
+
         console.print()
-    
+
     def show_step_by_step_guide(self, level_name):
         """Show detailed step-by-step guide for beginners"""
         guides = {
@@ -476,54 +534,57 @@ kubectl get deployment web -n k8squest
 kubectl get pods -n k8squest
 ```
 Look for "2/2" ready replicas!
-            """
+            """,
         }
-        
+
         guide = guides.get(level_name, "No guide available for this level.")
-        
-        console.print(Panel(
-            Markdown(guide),
-            title="[bold green]📚 Beginner's Guide[/bold green]",
-            border_style="green",
-            box=box.ROUNDED
-        ))
+
+        console.print(
+            Panel(
+                Markdown(guide),
+                title="[bold green]📚 Beginner's Guide[/bold green]",
+                border_style="green",
+                box=box.ROUNDED,
+            )
+        )
         console.print()
-    
+
     def deploy_mission(self, level_path, level_name):
         """Deploy the broken Kubernetes resources"""
         console.print("\n[yellow]🚀 Deploying mission environment...[/yellow]")
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            console=console
+            console=console,
         ) as progress:
             task = progress.add_task("Setting up namespace...", total=3)
-            
+
             # Delete and recreate namespace
             subprocess.run(
                 ["kubectl", "delete", "namespace", "k8squest", "--ignore-not-found"],
-                capture_output=True
+                capture_output=True,
             )
             progress.advance(task)
-            
+
             subprocess.run(
-                ["kubectl", "create", "namespace", "k8squest"],
-                capture_output=True
+                ["kubectl", "create", "namespace", "k8squest"], capture_output=True
             )
             progress.update(task, description="Deploying broken resources...")
             progress.advance(task)
-            
+
             # Check if level has a setup script (for levels needing history like rollback)
             setup_script = level_path / "setup.sh"
             if setup_script.exists():
                 console.print("[yellow]Running level setup script...[/yellow]")
                 result = subprocess.run(
-                    ["bash", str(setup_script)],
+                    ["sh", str(setup_script)],
                     cwd=str(level_path),
                     capture_output=True,
-                    text=True
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                 )
                 if result.returncode != 0:
                     console.print(f"[dim red]Setup warning: {result.stderr}[/dim red]")
@@ -532,147 +593,188 @@ Look for "2/2" ready replicas!
                 result = subprocess.run(
                     ["kubectl", "apply", "-f", str(level_path / "broken.yaml")],
                     capture_output=True,
-                    text=True
+                    text=True,
                 )
                 # Log errors for debugging (optional)
                 if result.returncode != 0:
                     console.print(f"[dim red]Warning: {result.stderr}[/dim red]")
-            
+
             progress.update(task, description="✅ Environment ready!")
             progress.advance(task)
-        
+
         console.print("\n")
-        console.print(Panel(
-            Text("🔴 MISSION DEPLOYED WITH BUGS! 🔴", style="bold red", justify="center") +
-            Text("\n\nSomething is broken in the Kubernetes cluster.", style="yellow") +
-            Text("\nYour mission: Find and fix the issue!", style="cyan"),
-            border_style="red",
-            box=box.DOUBLE
-        ))
+        console.print(
+            Panel(
+                Text(
+                    "🔴 MISSION DEPLOYED WITH BUGS! 🔴",
+                    style="bold red",
+                    justify="center",
+                )
+                + Text(
+                    "\n\nSomething is broken in the Kubernetes cluster.", style="yellow"
+                )
+                + Text("\nYour mission: Find and fix the issue!", style="cyan"),
+                border_style="red",
+                box=box.DOUBLE,
+            )
+        )
         console.print()
-    
+
     def validate_mission(self, level_path, level_name):
         """Run validation script and show results"""
         console.print("\n[yellow]🔍 Validating your solution...[/yellow]\n")
-        
+
         validate_script = level_path / "validate.sh"
         result = subprocess.run(
-            ["bash", str(validate_script)],
+            ["sh", str(validate_script)],
             capture_output=True,
-            text=True
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
-        
+
         if result.returncode == 0:
             # Success!
-            console.print(Panel(
-                Text("✅ MISSION COMPLETE! ✅", style="bold green", justify="center") +
-                Text(f"\n\n{result.stdout}", style="green"),
-                border_style="green",
-                box=box.DOUBLE
-            ))
+            console.print(
+                Panel(
+                    Text(
+                        "✅ MISSION COMPLETE! ✅", style="bold green", justify="center"
+                    )
+                    + Text(f"\n\n{result.stdout}", style="green"),
+                    border_style="green",
+                    box=box.DOUBLE,
+                )
+            )
             return True
         else:
             # Failed
-            console.print(Panel(
-                Text("❌ Not quite there yet...", style="bold red", justify="center") +
-                Text(f"\n\n{result.stdout}", style="red"),
-                border_style="red",
-                box=box.ROUNDED
-            ))
+            console.print(
+                Panel(
+                    Text(
+                        "❌ Not quite there yet...", style="bold red", justify="center"
+                    )
+                    + Text(f"\n\n{result.stdout}", style="red"),
+                    border_style="red",
+                    box=box.ROUNDED,
+                )
+            )
             return False
-    
+
     def play_level(self, level_path, level_name):
         """Play a single level with retro gaming UI"""
         mission = self.load_mission(level_path)
-        
+
         # Show retro level start screen
         if RETRO_UI_ENABLED:
-            level_num = int(level_name.split('-')[1]) if 'level-' in level_name else 0
-            show_level_start(level_num, mission['name'], mission['xp'], mission.get('difficulty', 'beginner'))
+            level_num = int(level_name.split("-")[1]) if "level-" in level_name else 0
+            show_level_start(
+                level_num,
+                mission["name"],
+                mission["xp"],
+                mission.get("difficulty", "beginner"),
+            )
             input()  # Wait for player to press any key
-        
+
         # Show mission briefing with metadata
         console.clear()
-        
+
         # Display retro-style header
         if RETRO_UI_ENABLED:
-            console.print(show_retro_header(mission['name'], mission['xp'], self.progress["total_xp"]))
+            console.print(
+                show_retro_header(
+                    mission["name"], mission["xp"], self.progress["total_xp"]
+                )
+            )
             console.print()
-        
+
         # Display difficulty and time estimate with gaming flair
         difficulty_colors = {
             "beginner": "green",
             "intermediate": "yellow",
             "advanced": "red",
-            "expert": "magenta"
+            "expert": "magenta",
         }
-        diff_color = difficulty_colors.get(mission.get('difficulty', 'beginner'), 'cyan')
-        
+        diff_color = difficulty_colors.get(
+            mission.get("difficulty", "beginner"), "cyan"
+        )
+
         difficulty_icons = {
             "beginner": "⚡",
             "intermediate": "⚡⚡",
             "advanced": "⚡⚡⚡",
-            "expert": "💀"
+            "expert": "💀",
         }
-        diff_icon = difficulty_icons.get(mission.get('difficulty', 'beginner'), '⚡')
-        
+        diff_icon = difficulty_icons.get(mission.get("difficulty", "beginner"), "⚡")
+
         metadata = f"[{diff_color}]{diff_icon}[/{diff_color}] {mission.get('difficulty', 'Unknown').upper()}"
         metadata += f"  |  ⏱️  ~{mission.get('expected_time', '?')}"
-        if 'concepts' in mission:
+        if "concepts" in mission:
             metadata += f"  |  🎯 {', '.join(mission['concepts'])}"
-        
+
         console.print(Panel(metadata, border_style=diff_color, box=box.HEAVY))
         console.print()
-        
+
         self.show_mission_briefing(mission, level_name)
-        
+
         # Deploy the mission
         self.deploy_mission(level_path, level_name)
-        
+
         # Show terminal instructions prominently
         self.show_terminal_instructions(level_name)
-        
+
         # Start with hint level 0 (no hints shown yet)
         current_hint_level = 0
-        
+
         # Interactive loop with retro UI
         attempts = 0
         while True:
             console.print()
-            
+
             # Show retro command menu
             if RETRO_UI_ENABLED:
                 console.print(show_command_menu())
             else:
-                console.print("="*60)
+                console.print("=" * 60)
                 console.print("[bold cyan]🎮 What would you like to do?[/bold cyan]")
-                console.print("="*60)
-                console.print("  [cyan]check[/cyan]     - 👁️  Monitor the resource status")
+                console.print("=" * 60)
+                console.print(
+                    "  [cyan]check[/cyan]     - 👁️  Monitor the resource status"
+                )
                 console.print("  [cyan]guide[/cyan]     - 📖 Step-by-step instructions")
                 console.print("  [cyan]hints[/cyan]     - 💡 Helpful kubectl commands")
-                console.print("  [cyan]solution[/cyan]  - 📄 View the solution.yaml file")
+                console.print(
+                    "  [cyan]solution[/cyan]  - 📄 View the solution.yaml file"
+                )
                 console.print("  [cyan]validate[/cyan]  - ✅ Test if you've fixed it")
                 console.print("  [cyan]skip[/cyan]      - ⏭️  Skip this level")
                 console.print("  [cyan]quit[/cyan]      - 🚪 Exit the game")
-                console.print("="*60)
-            
+                console.print("=" * 60)
+
             console.print()
-            
+
             action = Prompt.ask(
                 "⚔️  Choose your action",
-                choices=["check", "guide", "hints", "solution", "validate", "skip", "quit"],
-                default="check"
+                choices=[
+                    "check",
+                    "guide",
+                    "hints",
+                    "solution",
+                    "validate",
+                    "skip",
+                    "quit",
+                ],
+                default="check",
             )
-            
+
             if action == "check":
                 # Real-time status monitoring
                 self.monitor_status(level_name, duration=10)
-                
+
             elif action == "guide":
                 if RETRO_UI_ENABLED:
                     show_power_up_notification("guide")
                 self.show_step_by_step_guide(level_name)
-                
+
             elif action == "hints":
                 # Unlock next hint level
                 current_hint_level += 1
@@ -680,19 +782,23 @@ Look for "2/2" ready replicas!
                     show_power_up_notification("hint")
                 console.print()
                 # Show only the newly unlocked hint (not all previous hints)
-                self.show_progressive_hints(level_path, current_hint_level, show_all=False)
-            
+                self.show_progressive_hints(
+                    level_path, current_hint_level, show_all=False
+                )
+
             elif action == "solution":
                 console.print("\n[yellow]📄 Showing solution file...[/yellow]\n")
                 if RETRO_UI_ENABLED:
                     show_power_up_notification("solution")
                 self.show_solution_file(level_path)
-                console.print("[dim]💡 Use this as reference to fix the broken configuration[/dim]\n")
-                
+                console.print(
+                    "[dim]💡 Use this as reference to fix the broken configuration[/dim]\n"
+                )
+
             elif action == "validate":
                 attempts += 1
                 console.print(f"\n[dim]⚔️  ATTEMPT #{attempts}[/dim]")
-                
+
                 if self.validate_mission(level_path, level_name):
                     # Victory with retro UI!
                     if RETRO_UI_ENABLED:
@@ -705,19 +811,21 @@ Look for "2/2" ready replicas!
                         for i in range(3):
                             console.print("⭐ " * 20)
                             time.sleep(0.2)
-                        
+
                         # Award XP
                         xp_earned = mission["xp"]
                         self.progress["total_xp"] += xp_earned
-                    
+
                     if level_name not in self.progress["completed_levels"]:
                         self.progress["completed_levels"].append(level_name)
                     self.save_progress()
-                    
+
                     if not RETRO_UI_ENABLED:
-                        console.print(f"\n[bold yellow]🌟 +{xp_earned} XP! Total: {self.progress['total_xp']} XP[/bold yellow]")
+                        console.print(
+                            f"\n[bold yellow]🌟 +{xp_earned} XP! Total: {self.progress['total_xp']} XP[/bold yellow]"
+                        )
                     console.print(f"[dim]⚡ Cleared in {attempts} attempt(s)[/dim]\n")
-                    
+
                     # Check for milestones
                     if RETRO_UI_ENABLED:
                         completed_count = len(self.progress["completed_levels"])
@@ -729,10 +837,10 @@ Look for "2/2" ready replicas!
                             celebrate_milestone("final_boss")
                         elif completed_count == 50:
                             show_game_complete()
-                    
+
                     # Show debrief - THE LEARNING MOMENT!
                     self.show_debrief(level_path)
-                    
+
                     if Confirm.ask("Ready for the next challenge?", default=True):
                         return True
                     else:
@@ -744,25 +852,31 @@ Look for "2/2" ready replicas!
                         "Don't give up! You're learning! 💪",
                         "Every mistake teaches you something! 🧠",
                         "Try the 'guide' option for step-by-step help! 📚",
-                        "Use 'check' to see real-time status! 👀"
+                        "Use 'check' to see real-time status! 👀",
                     ]
-                    console.print(f"\n[yellow]{encouragement[attempts % len(encouragement)]}[/yellow]\n")
-                    
+                    console.print(
+                        f"\n[yellow]{encouragement[attempts % len(encouragement)]}[/yellow]\n"
+                    )
+
                     if not Confirm.ask("Try again?", default=True):
                         return False
-                        
+
             elif action == "skip":
-                if Confirm.ask("Skip this level? (No XP will be awarded)", default=False):
+                if Confirm.ask(
+                    "Skip this level? (No XP will be awarded)", default=False
+                ):
                     return True
-                    
+
             elif action == "quit":
-                console.print("\n[yellow]👋 Thanks for playing K8sQuest! Progress saved.[/yellow]\n")
+                console.print(
+                    "\n[yellow]👋 Thanks for playing K8sQuest! Progress saved.[/yellow]\n"
+                )
                 sys.exit(0)
-    
+
     def play_specific_level(self):
         """Allow user to select and play a specific level"""
         import re
-        
+
         # Get all worlds and their levels
         worlds = {}
         all_worlds = [
@@ -770,89 +884,97 @@ Look for "2/2" ready replicas!
             "world-2-deployments",
             "world-3-networking",
             "world-4-storage",
-            "world-5-security"
+            "world-5-security",
         ]
-        
+
         def natural_sort_key(path):
             """Extract numbers from path for natural sorting"""
-            parts = re.split(r'(\d+)', path.name)
+            parts = re.split(r"(\d+)", path.name)
             return [int(part) if part.isdigit() else part for part in parts]
-        
+
         # Collect all levels from all worlds
         for world_name in all_worlds:
             world_path = self.base_dir / "worlds" / world_name
             if world_path.exists():
-                levels = sorted([d for d in world_path.iterdir() if d.is_dir()], key=natural_sort_key)
+                levels = sorted(
+                    [d for d in world_path.iterdir() if d.is_dir()],
+                    key=natural_sort_key,
+                )
                 worlds[world_name] = levels
-        
+
         # Display all levels organized by world
         console.clear()
-        console.print(Panel(
-            "[bold cyan]Select a Level to Play[/bold cyan]",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel("[bold cyan]Select a Level to Play[/bold cyan]", border_style="cyan")
+        )
         console.print()
-        
+
         level_choices = []
         display_list = []
-        
+
         for world_name in all_worlds:
             if world_name not in worlds:
                 continue
-                
-            world_display = world_name.replace("world-", "World ").replace("-", " ").title()
+
+            world_display = (
+                world_name.replace("world-", "World ").replace("-", " ").title()
+            )
             console.print(f"\n[bold yellow]{world_display}[/bold yellow]")
-            
+
             for level_path in worlds[world_name]:
                 level_name = level_path.name
                 # Check if completed
-                status = "✅" if level_name in self.progress["completed_levels"] else "⭕"
-                
+                status = (
+                    "✅" if level_name in self.progress["completed_levels"] else "⭕"
+                )
+
                 # Load mission to get the name
                 mission_file = level_path / "mission.yaml"
                 if mission_file.exists():
-                    with open(mission_file, 'r') as f:
+                    with open(mission_file, "r", encoding='utf-8', errors='replace') as f:
                         mission = yaml.safe_load(f)
-                        display_name = mission.get('name', level_name)
+                        display_name = mission.get("name", level_name)
                 else:
                     display_name = level_name
-                
+
                 level_num = len(level_choices) + 1
                 level_choices.append((level_name, world_name, level_path))
                 display_list.append(f"  [{level_num:2d}] {status} {display_name}")
                 console.print(display_list[-1])
-        
+
         console.print("\n[dim]Enter level number or 'q' to quit[/dim]\n")
-        
+
         # Get user selection
         choice = Prompt.ask("Choose a level", default="q")
-        
-        if choice.lower() == 'q':
+
+        if choice.lower() == "q":
             console.print("\n[yellow]Returning to menu...[/yellow]\n")
             return
-        
+
         try:
             level_index = int(choice) - 1
             if 0 <= level_index < len(level_choices):
                 level_name, world_name, level_path = level_choices[level_index]
-                
+
                 # Update progress to this level
                 self.progress["current_level"] = level_name
                 self.progress["current_world"] = world_name
                 self.save_progress()
-                
+
                 # Play the level
                 self.play_level(level_path, level_name)
-                
+
                 # After playing, ask what to do next
                 console.print("\n[cyan]What would you like to do?[/cyan]")
                 console.print("  [1] Play another level")
                 console.print("  [2] Continue from here")
                 console.print("  [q] Quit")
                 console.print()
-                
-                next_choice = Prompt.ask("Your choice", choices=["1", "2", "q"], default="q")
-                
+
+                next_choice = Prompt.ask(
+                    "Your choice", choices=["1", "2", "q"], default="q"
+                )
+
                 if next_choice == "1":
                     self.play_specific_level()  # Recursive call to play another
                 elif next_choice == "2":
@@ -862,7 +984,7 @@ Look for "2/2" ready replicas!
                         "world-2-deployments",
                         "world-3-networking",
                         "world-4-storage",
-                        "world-5-security"
+                        "world-5-security",
                     ]
                     start_world_index = all_worlds_list.index(world_name)
                     for world in all_worlds_list[start_world_index:]:
@@ -876,24 +998,27 @@ Look for "2/2" ready replicas!
             console.print("[red]Please enter a valid number[/red]")
             time.sleep(1)
             self.play_specific_level()
-    
+
     def play_world(self, world_name):
         """Play all levels in a world"""
         world_path = self.base_dir / "worlds" / world_name
-        
+
         if not world_path.exists():
             console.print(f"[red]Error: World '{world_name}' not found[/red]")
             return False
-        
+
         # Get all level directories with natural sorting (level-1, level-2, ..., level-10)
         import re
+
         def natural_sort_key(path):
             """Extract numbers from path for natural sorting"""
-            parts = re.split(r'(\d+)', path.name)
+            parts = re.split(r"(\d+)", path.name)
             return [int(part) if part.isdigit() else part for part in parts]
-        
-        levels = sorted([d for d in world_path.iterdir() if d.is_dir()], key=natural_sort_key)
-        
+
+        levels = sorted(
+            [d for d in world_path.iterdir() if d.is_dir()], key=natural_sort_key
+        )
+
         # Find where to resume from
         start_index = 0
         if self.progress.get("current_level"):
@@ -901,39 +1026,49 @@ Look for "2/2" ready replicas!
             for i, level_path in enumerate(levels):
                 if level_path.name == self.progress["current_level"]:
                     # If the level is already completed, start from the next one
-                    if self.progress["current_level"] in self.progress["completed_levels"]:
+                    if (
+                        self.progress["current_level"]
+                        in self.progress["completed_levels"]
+                    ):
                         start_index = i + 1
                     else:
                         start_index = i
                     break
-        
+
         # Play levels starting from resume point
         for level_path in levels[start_index:]:
             level_name = level_path.name
-            
+
             # Save current level before playing
             self.progress["current_level"] = level_name
             self.progress["current_world"] = world_name
             self.save_progress()
-            
+
             if not self.play_level(level_path, level_name):
                 return False  # Player quit or stopped
-        
+
         # World complete!
         console.clear()
-        console.print(Panel(
-            Text("🎉 WORLD COMPLETE! 🎉", style="bold green", justify="center") +
-            Text(f"\n\nTotal XP: {self.progress['total_xp']}", style="yellow", justify="center"),
-            border_style="green",
-            box=box.DOUBLE
-        ))
+        console.print(
+            Panel(
+                Text("🎉 WORLD COMPLETE! 🎉", style="bold green", justify="center")
+                + Text(
+                    f"\n\nTotal XP: {self.progress['total_xp']}",
+                    style="yellow",
+                    justify="center",
+                ),
+                border_style="green",
+                box=box.DOUBLE,
+            )
+        )
         time.sleep(2)
-        
+
         return True  # World completed successfully
+
 
 def main():
     game = K8sQuest()
-    
+
     # First time setup - get player name
     if game.progress["player_name"] == "Padawan":
         console.print()
@@ -941,36 +1076,40 @@ def main():
         game.save_progress()
         console.print(f"\n[green]✨ Welcome, {game.progress['player_name']}![/green]\n")
         time.sleep(1)
-    
+
     game.show_welcome()
-    
+
     # All 5 worlds in order
     all_worlds = [
         "world-1-basics",
         "world-2-deployments",
         "world-3-networking",
         "world-4-storage",
-        "world-5-security"
+        "world-5-security",
     ]
-    
+
     # Check if there's progress to resume
-    has_progress = len(game.progress["completed_levels"]) > 0 or game.progress.get("current_level")
-    
+    has_progress = len(game.progress["completed_levels"]) > 0 or game.progress.get(
+        "current_level"
+    )
+
     if has_progress:
         current_level = game.progress.get("current_level", "None")
         current_world = game.progress.get("current_world", "world-1-basics")
         completed_count = len(game.progress["completed_levels"])
-        
-        console.print(Panel(
-            f"[yellow]📍 Resume Point Detected[/yellow]\n\n"
-            f"Current Level: [cyan]{current_level}[/cyan]\n"
-            f"Completed: [green]{completed_count}[/green] levels\n"
-            f"Total XP: [yellow]{game.progress['total_xp']}[/yellow]",
-            title="[bold]Continue Your Journey[/bold]",
-            border_style="yellow"
-        ))
+
+        console.print(
+            Panel(
+                f"[yellow]📍 Resume Point Detected[/yellow]\n\n"
+                f"Current Level: [cyan]{current_level}[/cyan]\n"
+                f"Completed: [green]{completed_count}[/green] levels\n"
+                f"Total XP: [yellow]{game.progress['total_xp']}[/yellow]",
+                title="[bold]Continue Your Journey[/bold]",
+                border_style="yellow",
+            )
+        )
         console.print()
-        
+
         # Offer three options
         console.print("[cyan]Choose an option:[/cyan]")
         console.print("  [1] Continue from where you left off")
@@ -978,9 +1117,9 @@ def main():
         console.print("  [3] Start from the beginning")
         console.print("  [q] Quit")
         console.print()
-        
+
         choice = Prompt.ask("Your choice", choices=["1", "2", "3", "q"], default="1")
-        
+
         if choice == "1":
             # Find which world to start from
             start_world_index = 0
@@ -988,22 +1127,22 @@ def main():
                 if world == current_world:
                     start_world_index = i
                     break
-            
+
             # Play from current world through to the end
             for world in all_worlds[start_world_index:]:
                 if not game.play_world(world):
                     break  # Player quit
-                    
+
         elif choice == "2":
             # Play specific level
             game.play_specific_level()
-            
+
         elif choice == "3":
             game.progress["current_level"] = None
             game.progress["completed_levels"] = []
             game.progress["total_xp"] = 0
             game.save_progress()
-            
+
             # Play all worlds from the beginning
             for world in all_worlds:
                 if not game.play_world(world):
@@ -1018,6 +1157,7 @@ def main():
                     break  # Player quit
         else:
             console.print("\n[yellow]See you later, Padawan![/yellow]\n")
+
 
 if __name__ == "__main__":
     try:
