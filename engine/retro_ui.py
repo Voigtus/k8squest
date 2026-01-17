@@ -202,24 +202,25 @@ def show_level_start(level_num, title, xp, difficulty):
 
 def show_victory(xp_earned, total_xp):
     """Victory screen with celebration"""
-    console.clear()
+    import os
     
-    console.print(VICTORY_SCREEN, style="bold green")
-    console.print()
-    
-    # XP Animation
-    console.print(Align.center("🎊 MISSION COMPLETE! 🎊"), style="bold yellow")
-    console.print()
-    
+    # XP Animation - cycles through coin emojis
     for coin in COIN_ANIMATION:
-        console.print(Align.center(f"{coin} +{xp_earned} XP {coin}"), style="bold yellow")
-        time.sleep(0.2)
-        console.clear()
+        # Clear screen using both methods for compatibility
+        os.system('clear' if os.name != 'nt' else 'cls')
         console.print(VICTORY_SCREEN, style="bold green")
         console.print()
         console.print(Align.center("🎊 MISSION COMPLETE! 🎊"), style="bold yellow")
         console.print()
+        console.print(Align.center(f"{coin} +{xp_earned} XP {coin}"), style="bold yellow")
+        time.sleep(0.4)
     
+    # Final victory screen (no more animation)
+    os.system('clear' if os.name != 'nt' else 'cls')
+    console.print(VICTORY_SCREEN, style="bold green")
+    console.print()
+    console.print(Align.center("🎊 MISSION COMPLETE! 🎊"), style="bold yellow")
+    console.print()
     console.print(Align.center(f"⭐ +{xp_earned} XP ⭐"), style="bold yellow")
     console.print(Align.center(f"💎 TOTAL XP: {total_xp} 💎"), style="bold cyan")
     console.print()
