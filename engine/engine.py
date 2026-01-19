@@ -6,6 +6,7 @@ K8sQuest - Interactive Kubernetes Learning Game
 
 import json
 import os
+import select
 import subprocess
 import sys
 import time
@@ -22,6 +23,13 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
+
+# Platform-specific imports for pagination
+if os.name == 'nt':  # Windows
+    import msvcrt
+else:  # Unix/Linux/Mac
+    import tty
+    import termios
 
 # Import retro UI components
 try:
@@ -63,6 +71,193 @@ except ImportError:
     print("⚠️  Warning: Safety guards module not found. Running without protection.")
 
 console = Console()
+
+
+class PaginatedDisplay:
+    """Helper class for paginating long content like man pages"""
+
+    def __init__(self, console, lines_per_page=None):
+        self.console = console
+        self.lines_per_page = lines_per_page or self._calculate_lines_per_page()
+
+    def _calculate_lines_per_page(self):
+        """Pick a sensible default based on terminal height"""
+        default_height = 24
+        try:
+            size = getattr(self.console, "size", None)
+            if size and getattr(size, "height", None):
+                default_height = size.height
+            elif hasattr(self.console, "height"):
+                default_height = self.console.height
+        except Exception:
+            pass
+        # Reserve space for title, borders, and navigation prompts
+        return max(8, default_height - 8)
+
+    def _get_keypress(self):
+        """Read a single keypress (cross-platform) and return it"""
+        if os.name == 'nt':  # Windows
+            while True:
+                ch = msvcrt.getwch()
+                # Arrow/page keys emit a null prefix - skip them
+                if ch in ("\x00", "\xe0"):
+                    msvcrt.getwch()
+                    continue
+                if ch == "\r":
+                    return "\n"
+                return ch
+        else:  # Unix/Linux/Mac
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                ch = sys.stdin.read(1)
+                if ch == "\x1b":
+                    # Arrow/Page keys send an escape sequence quickly; detect extra bytes
+                    if select.select([sys.stdin], [], [], 0.01)[0]:
+                        sys.stdin.read(2)
+                        return ""
+                    # Treat a lone ESC as a quick exit request
+                    return 'q'
+                # Convert carriage return to newline (Enter key in raw mode)
+                if ch == "\r":
+                    return "\n"
+                return ch
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    @staticmethod
+    def _build_code_block_states(lines):
+        """Track whether each line is inside a fenced code block"""
+        states = []
+        inside_code = False
+        for line in lines:
+            states.append(inside_code)
+            stripped = line.strip()
+            if stripped.startswith("```"):
+                inside_code = not inside_code
+        return states
+
+    def _build_page_ranges(self, lines):
+        """Create page ranges that avoid splitting fenced code blocks"""
+        if not lines:
+            return [(0, 0)]
+
+        code_states = self._build_code_block_states(lines)
+        ranges = []
+        start = 0
+        line_count = len(lines)
+
+        while start < line_count:
+            end = min(start + self.lines_per_page, line_count)
+            # Avoid splitting inside a code block by extending to the closing fence
+            while end < line_count and code_states[end - 1]:
+                end += 1
+            if end == start:  # Safety: ensure progress
+                end = min(start + self.lines_per_page, line_count)
+            ranges.append((start, end))
+            start = end
+
+        return ranges
+
+    def _render_page(self, page_content, title, border_style, page_num=None, total_pages=None):
+        # More aggressive screen clearing for cleaner navigation
+        # Use ANSI escape codes for proper clearing
+        self.console.print("\033[2J", end="")  # Clear entire screen
+        self.console.print("\033[H", end="")   # Move cursor to home (0,0)
+
+        if page_num is not None and total_pages is not None:
+            page_indicator = f" [Page {page_num}/{total_pages}]"
+        else:
+            page_indicator = ""
+
+        self.console.print(
+            Panel(
+                Markdown(page_content),
+                title=f"[bold {border_style}]{title}{page_indicator}[/bold {border_style}]",
+                border_style=border_style,
+                box=box.DOUBLE,
+            )
+        )
+
+    def _print_navigation_hint(self, page_index, total_pages):
+        nav_parts = ["[dim]Navigation:[/dim]", "[cyan]Enter/Space[/cyan] next"]
+        if page_index > 0:
+            nav_parts.append("[cyan]b[/cyan] back")
+        if total_pages > 1:
+            nav_parts.append("[cyan]g[/cyan] go to start")
+        nav_parts.append("[cyan]q[/cyan] skip debrief")
+        if page_index == total_pages - 1:
+            nav_parts.append("[cyan]Enter[/cyan] finishes")
+        hint = " • ".join(nav_parts)
+        self.console.print(hint)
+
+    def display_paginated(self, content, title="Content", border_style="green", use_alt_buffer=False):
+        """Display content with pagination like man pages
+        
+        Args:
+            content: The content to display
+            title: Title for the panel
+            border_style: Color/style of the border
+            use_alt_buffer: If True, use alternative screen buffer (content disappears after exit)
+                          If False, content stays in terminal history (better for learning content)
+        """
+        lines = content.split('\n')
+        page_ranges = self._build_page_ranges(lines)
+        total_pages = len(page_ranges)
+
+        if total_pages == 1:
+            self._render_page(content, title, border_style)
+            self.console.print()
+            Prompt.ask("\n[dim]Press ENTER to continue[/dim]", default="")
+            return
+
+        # Optionally enter alternative screen buffer (like less/man pages)
+        # For debriefs, we want content to stay visible in terminal history
+        if use_alt_buffer:
+            sys.stdout.write("\033[?1049h")  # Enable alternative buffer
+            sys.stdout.flush()
+
+        try:
+            page_index = 0
+
+            while True:
+                # Clear screen for clean page display (but stay in main buffer if use_alt_buffer=False)
+                if not use_alt_buffer:
+                    self.console.clear()
+                
+                start_idx, end_idx = page_ranges[page_index]
+                page_content = '\n'.join(lines[start_idx:end_idx])
+                self._render_page(page_content, title, border_style, page_index + 1, total_pages)
+                self.console.print()
+                self._print_navigation_hint(page_index, total_pages)
+
+                key = self._get_keypress()
+                if not key:
+                    continue
+
+                key_lower = key.lower()
+                if key in ('\n', ' ', ''):
+                    if page_index == total_pages - 1:
+                        break
+                    page_index = min(total_pages - 1, page_index + 1)
+                elif key_lower == 'b' and page_index > 0:
+                    page_index -= 1
+                elif key_lower == 'g':
+                    page_index = 0
+                elif key_lower == 'q':
+                    # Skip remaining pages
+                    break
+                else:
+                    # Unrecognized input - ignore and wait again
+                    continue
+        finally:
+            # Exit alternative screen buffer if it was enabled
+            if use_alt_buffer:
+                sys.stdout.write("\033[?1049l")  # Disable alternative buffer
+                sys.stdout.flush()
+
+        self.console.print()
 
 
 class K8sQuest:
@@ -291,23 +486,15 @@ class K8sQuest:
         with open(debrief_file, "r", encoding='utf-8', errors='replace') as f:
             debrief_content = f.read()
 
-        # Clear screen and move cursor to top
-        console.clear()
-        console.print(
-            "\033[H", end=""
-        )  # ANSI escape code to move cursor to home position
-
-        console.print(
-            Panel(
-                Markdown(debrief_content),
-                title="[bold green]🎓 Mission Debrief - What You Learned[/bold green]",
-                border_style="green",
-                box=box.DOUBLE,
-            )
+        # Use paginated display WITHOUT alternative buffer
+        # This keeps the debrief visible in terminal history for reference
+        paginator = PaginatedDisplay(console)
+        paginator.display_paginated(
+            debrief_content,
+            title="🎓 Mission Debrief - What You Learned",
+            border_style="green",
+            use_alt_buffer=False  # Keep debrief in terminal history
         )
-        console.print()
-
-        Prompt.ask("\n[dim]Press ENTER to continue[/dim]", default="")
 
     def show_solution_file(self, level_path):
         """Display the solution.yaml file contents"""
@@ -562,15 +749,27 @@ Look for "2/2" ready replicas!
             task = progress.add_task("Setting up namespace...", total=3)
 
             # Delete and recreate namespace
-            subprocess.run(
+            result = subprocess.run(
                 ["kubectl", "delete", "namespace", "k8squest", "--ignore-not-found"],
                 capture_output=True,
+                text=True,
             )
             progress.advance(task)
 
-            subprocess.run(
-                ["kubectl", "create", "namespace", "k8squest"], capture_output=True
+            result = subprocess.run(
+                ["kubectl", "create", "namespace", "k8squest"],
+                capture_output=True,
+                text=True,
             )
+            
+            # Check for namespace creation errors
+            if result.returncode != 0:
+                console.print(f"\n[red]⚠️  Failed to create namespace:[/red]")
+                console.print(f"[dim red]{result.stderr}[/dim red]")
+                console.print("[yellow]💡 Hint: Make sure your kubectl context is set correctly[/yellow]")
+                console.print("[dim]Run: kubectl config use-context kind-k8squest[/dim]")
+                return False
+            
             progress.update(task, description="Deploying broken resources...")
             progress.advance(task)
 
@@ -579,7 +778,7 @@ Look for "2/2" ready replicas!
             if setup_script.exists():
                 console.print("[yellow]Running level setup script...[/yellow]")
                 result = subprocess.run(
-                    ["sh", str(setup_script)],
+                    ["bash", str(setup_script)],
                     cwd=str(level_path),
                     capture_output=True,
                     text=True,
@@ -587,7 +786,11 @@ Look for "2/2" ready replicas!
                     errors="replace",
                 )
                 if result.returncode != 0:
-                    console.print(f"[dim red]Setup warning: {result.stderr}[/dim red]")
+                    console.print(f"[red]Setup failed:[/red]")
+                    console.print(f"[dim red]{result.stderr}[/dim red]")
+                    if result.stdout:
+                        console.print(f"[dim]{result.stdout}[/dim]")
+                    return False
             else:
                 # Apply broken config (without forcing namespace to respect YAML)
                 result = subprocess.run(
@@ -595,9 +798,11 @@ Look for "2/2" ready replicas!
                     capture_output=True,
                     text=True,
                 )
-                # Log errors for debugging (optional)
+                # Show errors if deployment fails
                 if result.returncode != 0:
-                    console.print(f"[dim red]Warning: {result.stderr}[/dim red]")
+                    console.print(f"[red]Deployment failed:[/red]")
+                    console.print(f"[dim red]{result.stderr}[/dim red]")
+                    return False
 
             progress.update(task, description="✅ Environment ready!")
             progress.advance(task)
@@ -619,19 +824,30 @@ Look for "2/2" ready replicas!
             )
         )
         console.print()
+        return True  # Deployment successful
 
     def validate_mission(self, level_path, level_name):
         """Run validation script and show results"""
         console.print("\n[yellow]🔍 Validating your solution...[/yellow]\n")
 
         validate_script = level_path / "validate.sh"
+        
+        # Run validation script from the level directory with proper environment
         result = subprocess.run(
-            ["sh", str(validate_script)],
+            ["bash", str(validate_script)],
+            cwd=str(level_path),  # CRITICAL: Run from level directory
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env={**os.environ}  # Pass through environment variables
         )
+
+        # Always show output for debugging
+        if result.stdout:
+            console.print(f"[dim]{result.stdout}[/dim]")
+        if result.stderr and result.returncode != 0:
+            console.print(f"[dim red]Error output: {result.stderr}[/dim red]")
 
         if result.returncode == 0:
             # Success!
@@ -717,7 +933,21 @@ Look for "2/2" ready replicas!
         self.show_mission_briefing(mission, level_name)
 
         # Deploy the mission
-        self.deploy_mission(level_path, level_name)
+        deployment_success = self.deploy_mission(level_path, level_name)
+        
+        # If deployment failed, offer to retry or skip
+        if not deployment_success:
+            console.print("\n[red]⚠️  Mission deployment failed![/red]")
+            console.print("[yellow]This usually means:[/yellow]")
+            console.print("  1. kubectl context is not set to 'kind-k8squest'")
+            console.print("  2. Kind cluster is not running")
+            console.print("  3. Docker is not running")
+            console.print()
+            
+            if Confirm.ask("Would you like to skip this level?", default=False):
+                return True
+            else:
+                return False
 
         # Show terminal instructions prominently
         self.show_terminal_instructions(level_name)
@@ -840,6 +1070,10 @@ Look for "2/2" ready replicas!
 
                     # Show debrief - THE LEARNING MOMENT!
                     self.show_debrief(level_path)
+                    
+                    # Pause before asking about next challenge
+                    console.print("\n[dim]Press Enter to continue...[/dim]")
+                    input()
 
                     if Confirm.ask("Ready for the next challenge?", default=True):
                         return True
